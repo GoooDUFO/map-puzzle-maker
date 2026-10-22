@@ -33,4 +33,4 @@ code is needed.
 
 - **Printer presets** in `app.js` (`PRINTERS`) are the makers' published bed sizes (X × Y). The map is fitted to the bed minus the edge margin. On a rectangular bed it may be laid out sideways when that prints bigger; the page tells you to rotate it 90° in the slicer.
 - **gbOpen** files load straight from GitHub. **gbHumanitarian** and **gbAuthoritative** aren't on GitHub's main branch, so they go through the geoBoundaries API and fail when it's down.
-- **Publishing:** this folder is its own git repo ([GoooDUFO/map-puzzle-maker](https://github.com/GoooDUFO/map-puzzle-maker)). GitHub Pages serves `main` from the root. To update the site, push to `main`.
+- **Publishing:** this folder is its own git repo ([GoooDUFO/map-puzzle-maker](https://github.com/GoooDUFO/map-puzzle-maker)). GitHub Pages serves `main` from the root. To update the site, bump the `?v=` tags in `index.html` and `app.js` (so browsers don't keep the old files for up to 10 minutes), then push to `main`.
