@@ -32,7 +32,7 @@ let worker, seq = 0;
 const pending = new Map();
 
 function startWorker() {
-  worker = new Worker("worker.js?v=3");
+  worker = new Worker("worker.js?v=4");
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === "status") return setEngine(m.text);
