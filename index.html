@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Map Puzzle Maker</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {"imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }}
+  </script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Map puzzle maker</h1>
+      <span class="sub">geoBoundaries to a printable puzzle plate, built entirely in your browser</span>
+    </div>
+    <div id="engine" class="pill busy" title="The Python pipeline runs locally in a web worker">
+      <span class="dot"></span><span id="engine-text">Starting engine…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="steps">
+      <div class="card" id="step-source">
+        <h2><span class="num">1</span>Source</h2>
+        <div class="row">
+          <label class="grow">Country
+            <input id="iso" list="countries" placeholder="Uzbekistan or UZB" autocomplete="off" spellcheck="false">
+          </label>
+          <label>Level
+            <select id="adm"><option>ADM1</option><option>ADM2</option><option>ADM3</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <label class="grow">Release
+            <select id="release">
+              <option value="gbOpen">gbOpen</option>
+              <option value="gbHumanitarian">gbHumanitarian</option>
+              <option value="gbAuthoritative">gbAuthoritative</option>
+            </select>
+          </label>
+          <button id="fetch" class="primary">Load boundaries</button>
+        </div>
+        <p class="or">or <label class="link" tabindex="0">upload a GeoJSON<input type="file" id="upload" accept=".geojson,.json" hidden></label></p>
+        <p id="source-error" class="error" hidden></p>
+        <div id="source-info" class="info" hidden></div>
+        <datalist id="countries"></datalist>
+      </div>
+
+      <div class="card" id="step-names" hidden>
+        <h2><span class="num">2</span>Names</h2>
+        <label>Quiz names <span class="hint">optional · paste the list, comma or one per line</span>
+          <textarea id="quiz" rows="3" placeholder="Andijan Region, Bukhara Region, …"></textarea>
+        </label>
+        <button id="match">Match names</button>
+        <div id="match-summary" class="info"></div>
+        <div class="table-wrap">
+          <table id="features">
+            <thead><tr><th>Source</th><th>Piece name</th><th class="r">km²</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint">Give two sources the same piece name to merge them. Clear a name to drop that region.</p>
+        <datalist id="quiz-names"></datalist>
+      </div>
+
+      <div class="card" id="step-layout" hidden>
+        <h2><span class="num">3</span>Layout</h2>
+        <label>Printer
+          <select id="printer"></select>
+        </label>
+        <div class="grid2" id="custom-bed" hidden>
+          <label>Bed width, mm <input id="bed-w" type="number" value="200" min="40" max="1000" step="1"></label>
+          <label>Bed depth, mm <input id="bed-h" type="number" value="200" min="40" max="1000" step="1"></label>
+        </div>
+        <div class="grid2">
+          <label>Edge margin, mm <input id="margin" type="number" value="2.5" min="0" max="50" step="0.5"></label>
+          <label>Keep islands ≥ mm² <input id="island" type="number" value="15" min="0" step="1"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="move" checked> Move detached parts closer for a bigger print</label>
+        <label class="check"><input type="checkbox" id="fill" checked> Fill holes no piece sits in (enclaves, lakes)</label>
+        <div id="layout-info" class="info"></div>
+        <p class="hint">Click a part in the preview to keep or drop it.</p>
+      </div>
+
+      <div class="card" id="step-build" hidden>
+        <h2><span class="num">4</span>Build</h2>
+        <div class="grid3">
+          <label>Thickness <input id="thickness" type="number" value="1.6" step="0.1" min="0.8"></label>
+          <label>Engrave <input id="depth" type="number" value="0.6" step="0.1" min="0.2"></label>
+          <label>Gap <input id="gap" type="number" value="0.6" step="0.1" min="0"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="labels" checked> Engrave names on the back, mirrored</label>
+        <button id="build" class="primary wide">Build plate</button>
+        <p id="build-error" class="error" hidden></p>
+        <div id="downloads" class="downloads" hidden></div>
+      </div>
+    </section>
+
+    <section class="stage card">
+      <nav class="tabs" role="tablist">
+        <button data-tab="layout" class="on" role="tab">Layout</button>
+        <button data-tab="model" role="tab" disabled>3D</button>
+        <button data-tab="check" role="tab" disabled>Check</button>
+        <button data-tab="log" role="tab">Log</button>
+      </nav>
+      <div class="pane" id="pane-layout">
+        <div id="empty" class="empty">
+          <p class="big">Pick a country to start.</p>
+          <p>Boundaries come from <a href="https://www.geoboundaries.org" target="_blank" rel="noopener">geoBoundaries</a>.
+            Everything after the download runs on this computer.</p>
+        </div>
+        <svg id="map" hidden></svg>
+        <div id="tip" class="tip" hidden></div>
+        <div id="legend" class="legend" hidden>
+          <span><i class="sw kept"></i>kept</span><span><i class="sw moved"></i>moved closer</span><span><i class="sw dropped"></i>dropped</span><span><i class="sw bed"></i><span id="bed-label">bed</span></span>
+        </div>
+      </div>
+      <div class="pane" id="pane-model" hidden>
+        <div id="viewer"></div>
+        <div class="viewer-bar"><button id="flip">Show back</button><span class="hint">Drag to orbit · scroll to zoom</span></div>
+      </div>
+      <div class="pane scroll" id="pane-check" hidden>
+        <div id="check-summary" class="info"></div>
+        <div class="table-wrap tall"><table id="check"><thead><tr>
+          <th>Tile</th><th class="r">Label mm</th><th class="r">Waist mm</th><th class="r">Area mm²</th><th>Extra pieces</th>
+        </tr></thead><tbody></tbody></table></div>
+        <div class="shots"><figure><img id="img-back" alt="Back of the plate, mirrored so the names read"><figcaption>Back, as you'll read it</figcaption></figure></div>
+      </div>
+      <div class="pane" id="pane-log" hidden><pre id="log"></pre></div>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
