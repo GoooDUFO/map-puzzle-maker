@@ -109,18 +109,22 @@ document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("cli
 
 // ------------------------------------------------------------------ 1. source
 
+// countries.json is built from geoBoundaries' own release list (releaseData/
+// geoBoundariesOpen-meta.csv): [ISO3, name, {release: [levels]}]. Bundled with the site
+// because the geoboundaries.org API is often down.
 const countries = new Map();   // lower-case name or ISO -> ISO
-fetch("https://www.geoboundaries.org/api/current/gbOpen/ALL/ADM0/")
+const levels = new Map();      // ISO -> gbOpen levels, e.g. ["ADM0", "ADM1", "ADM2"]
+fetch("countries.json")
   .then((r) => r.json())
   .then((list) => {
     const dl = $("#countries");
-    list.sort((a, b) => a.boundaryName.localeCompare(b.boundaryName));
-    for (const c of list) {
-      countries.set(c.boundaryName.toLowerCase(), c.boundaryISO);
-      countries.set(c.boundaryISO.toLowerCase(), c.boundaryISO);
+    for (const [iso, name, rel] of list) {
+      countries.set(name.toLowerCase(), iso);
+      countries.set(iso.toLowerCase(), iso);
+      levels.set(iso, (rel.gbOpen || []).filter((l) => l !== "ADM0"));
       const o = document.createElement("option");
-      o.value = c.boundaryName;
-      o.label = c.boundaryISO;
+      o.value = name;
+      o.label = iso;
       dl.append(o);
     }
   })
@@ -129,6 +133,40 @@ fetch("https://www.geoboundaries.org/api/current/gbOpen/ALL/ADM0/")
 function resolveIso(v) {
   v = v.trim();
   return countries.get(v.toLowerCase()) || (/^[a-z]{3}$/i.test(v) ? v.toUpperCase() : null);
+}
+
+// offer only the levels gbOpen actually has for the chosen country
+$("#iso").addEventListener("input", () => {
+  const iso = resolveIso($("#iso").value);
+  const have = iso && levels.get(iso);
+  if (!have || !have.length) return;
+  const sel = $("#adm"), cur = sel.value;
+  sel.innerHTML = have.map((l) => `<option>${l}</option>`).join("");
+  sel.value = have.includes(cur) ? cur : have[0];
+});
+
+const GB = "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries";
+
+// gbOpen lives on GitHub's main branch, so it loads straight from the CDN. The other
+// releases are only reachable through the geoBoundaries API, which names the commit
+// the file sits at; media.githubusercontent.com serves that commit with CORS headers.
+async function sourceUrls(rel, iso, adm) {
+  if (rel === "gbOpen") {
+    const base = `${GB}/main/releaseData/gbOpen/${iso}/${adm}/geoBoundaries-${iso}-${adm}`;
+    return { geojson: base + ".geojson", meta: base + "-metaData.json" };
+  }
+  let info;
+  try {
+    const r = await fetch(`https://www.geoboundaries.org/api/current/${rel}/${iso}/${adm}/`, { signal: AbortSignal.timeout(20000) });
+    if (r.status === 404) throw Object.assign(new Error("not found"), { status: 404 });
+    info = await r.json();
+  } catch (e) {
+    if (e.status === 404) throw e;
+    throw new Error(`the geoBoundaries server isn't responding, and ${rel} files are only available through it. Try gbOpen, or try again later.`);
+  }
+  if (!info || !info.gjDownloadURL) throw Object.assign(new Error("not found"), { status: 404 });
+  const m = info.gjDownloadURL.match(/github\.com\/wmgeolab\/geoBoundaries\/raw\/([^/]+)\/(.+)$/);
+  return { geojson: m ? `${GB}/${m[1]}/${m[2]}` : info.gjDownloadURL, meta: null, info };
 }
 
 async function download(url, onProgress) {
@@ -154,13 +192,16 @@ $("#fetch").addEventListener("click", async () => {
   if (!iso) return showError(err, "Enter a country name from the list or a 3-letter ISO code.");
   showError(err, "");
   const rel = $("#release").value, adm = $("#adm").value;
-  const base = `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/${rel}/${iso}/${adm}/geoBoundaries-${iso}-${adm}`;
   const btn = $("#fetch");
   btn.disabled = true;
   try {
+    btn.textContent = "Finding file…";
+    const src = await sourceUrls(rel, iso, adm);
     btn.textContent = "Downloading…";
-    const metaP = fetch(base + "-metaData.json").then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    const text = await download(base + ".geojson", (got, total) => {
+    const metaP = src.meta
+      ? fetch(src.meta).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      : Promise.resolve(src.info || null);
+    const text = await download(src.geojson, (got, total) => {
       btn.textContent = total ? `Downloading ${Math.round((100 * got) / total)}%` : `Downloading ${fmt(got / 1e6)} MB`;
     });
     await loadText(text, "shapeName", `${iso.toLowerCase()}_${adm.toLowerCase()}`, await metaP);
